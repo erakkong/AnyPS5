@@ -1,12 +1,15 @@
 #include "prx/libSceIcu/libSceIcu.hpp"
 #include "prx/libc/include/General.hpp"
+#include "unicode/ucnv.h"
 #include "ustr_cnv.h"
 #include <array>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_set>
 
 namespace {
@@ -26,6 +29,19 @@ void CopyOut(void* destination, const void* source, std::size_t bytes, const cha
     const bool ok = GuestCopyOut_nid_no_patch(destination, source, bytes);
     errno = savedErrno;
     if (!ok) NotImplemented_nid_no_patch(caller);
+}
+
+std::string CopyName(const char* source, const char* caller) {
+    std::string result;
+    auto address = reinterpret_cast<std::uintptr_t>(source);
+    for (;;) {
+        char value = 0;
+        CopyIn(&value, reinterpret_cast<const void*>(address), sizeof(value), caller);
+        if (value == 0) return result;
+        if (result.size() < 64) result.push_back(value);
+        if (address == std::numeric_limits<std::uintptr_t>::max()) NotImplemented_nid_no_patch(caller);
+        ++address;
+    }
 }
 
 bool IsDigit(unsigned char value, bool ebcdic) {
@@ -182,6 +198,22 @@ const char* APS5_VABI ucnv_detectUnicodeSignature_nid_postfix(const char* source
     }
     if (signatureLength) CopyOut(signatureLength, &length, sizeof(length), __func__);
     return name;
+}
+
+const char* APS5_VABI ucnv_getDefaultName_nid_postfix() {
+    const std::lock_guard lock(DefaultConverterMutex);
+    return ucnv_getDefaultName();
+}
+
+void APS5_VABI ucnv_setDefaultName_nid_postfix(const char* name) {
+    std::string nameCopy;
+    const char* nativeName = nullptr;
+    if (name) {
+        nameCopy = CopyName(name, __func__);
+        nativeName = nameCopy.c_str();
+    }
+    const std::lock_guard lock(DefaultConverterMutex);
+    ucnv_setDefaultName(nativeName);
 }
 
 }

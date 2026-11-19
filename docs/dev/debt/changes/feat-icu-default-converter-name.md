@@ -1,0 +1,5 @@
+# libSceIcu
+
+## change [Converter-name and signature helpers]
+
+- [Converter-name and signature helpers](../../../core/libs/prx/libSceIcu/ConverterHelpers.cpp) have no console ABI or behavior verification. Behavior follows ICU 78.1 [ucnv_io.cpp](https://github.com/unicode-org/icu/blob/049e0d6a420629ac7db77256987d083a563287b5/icu4c/source/common/ucnv_io.cpp) and [ucnv.cpp](https://github.com/unicode-org/icu/blob/049e0d6a420629ac7db77256987d083a563287b5/icu4c/source/common/ucnv.cpp). Name comparison uses the ASCII charset family; EBCDIC normalizer keeps EBCDIC output. Null normalization arguments throw instead of reproducing undefined access. Signature detection preserves ICU status and length behavior. `ucnv_getDefaultName` and `ucnv_setDefaultName` synchronize on `DefaultConverterMutex`; `ucnv_setDefaultName` validates replacement name memory via checked guest access, throwing through `NotImplemented_nid_no_patch`. Cross-firmware availability and native invalid-pointer behavior remain unverified.

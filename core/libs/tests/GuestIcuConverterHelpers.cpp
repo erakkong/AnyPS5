@@ -1,4 +1,5 @@
 #include "prx/libSceIcu/libSceIcu.hpp"
+#include "prx/libc/include/General.hpp"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -62,6 +63,20 @@ void DefaultConverterLifecycle() {
     u_flushDefaultConverter_nid_postfix();
     u_releaseDefaultConverter_nid_postfix(reused);
     u_flushDefaultConverter_nid_postfix();
+
+    const char* original = ucnv_getDefaultName_nid_postfix();
+    Require(original != nullptr, "default converter name is not null");
+    Require(std::strlen(original) > 0, "default converter name is not empty");
+    char firstByte = 0;
+    Require(GuestCopyIn_nid_no_patch(&firstByte, original, sizeof(firstByte)), "default name storage is guest readable");
+    ucnv_setDefaultName_nid_postfix("UTF-8");
+    const char* utf8 = ucnv_getDefaultName_nid_postfix();
+    Require(utf8 != nullptr && std::strcmp(utf8, "UTF-8") == 0, "setting default name takes effect");
+    ucnv_setDefaultName_nid_postfix(original);
+    Require(std::strcmp(ucnv_getDefaultName_nid_postfix(), original) == 0, "restoring default name succeeds");
+    ucnv_setDefaultName_nid_postfix(nullptr);
+    Require(ucnv_getDefaultName_nid_postfix() != nullptr, "clearing default name restores system default");
+    ucnv_setDefaultName_nid_postfix(original);
 }
 
 char Ebcdic(unsigned char value) {
@@ -265,6 +280,8 @@ void SignatureGuestPointers() {
                                      "unreadable terminated source throws and keeps errno");
     RequiresRuntimeErrorKeepingErrno([&] { ucnv_detectUnicodeSignature_nid_postfix(bom, 3, readOnlyZero, &status); },
                                      "unwritable signature length throws and keeps errno");
+    RequiresRuntimeErrorKeepingErrno([&] { ucnv_setDefaultName_nid_postfix(unmappedSource); },
+                                     "unreadable default name throws and keeps errno");
     Require(status == 0, "guest pointer failures leave the status unchanged");
     std::int32_t length = 123;
     Require(!ucnv_detectUnicodeSignature_nid_postfix(pages + pageSize - 3, -1, &length, &status), "terminated source stops before the guard page");
