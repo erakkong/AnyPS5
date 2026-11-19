@@ -80,11 +80,46 @@ void CheckParity(const char* alias, std::int32_t initial) {
         Require(CheckedString(actual[index + 1]) == expected[index], "alias value and order match pinned ICU");
         Require(CheckedString(expected[index]) == expected[index], "native alias storage is guest-readable");
     }
+
+    UErrorCode nativeCountStatus = static_cast<UErrorCode>(initial);
+    const auto nativeCount = ucnv_countAliases(alias, &nativeCountStatus);
+    std::int32_t guestCountStatus = initial;
+    const auto guestCount = ucnv_countAliases_nid_postfix(alias, &guestCountStatus);
+    Require(guestCount == nativeCount, "countAliases count matches native count");
+    Require(guestCountStatus == static_cast<std::int32_t>(nativeCountStatus),
+            "countAliases status matches native status");
+
+    for (std::uint16_t index = 0; index < nativeCount; ++index) {
+        UErrorCode nativeAliasStatus = static_cast<UErrorCode>(initial);
+        const auto* nativeAlias = ucnv_getAlias(alias, index, &nativeAliasStatus);
+        std::int32_t guestAliasStatus = initial;
+        const auto* guestAlias = ucnv_getAlias_nid_postfix(alias, index, &guestAliasStatus);
+        Require(guestAliasStatus == static_cast<std::int32_t>(nativeAliasStatus),
+                "getAlias status matches native status");
+        if (nativeAlias) {
+            Require(guestAlias != nullptr, "getAlias returned non-null for valid index");
+            Require(CheckedString(guestAlias) == nativeAlias, "getAlias matches native string");
+        } else {
+            Require(guestAlias == nullptr, "getAlias returned null matching native");
+        }
+    }
+
+    UErrorCode nativeOobStatus = static_cast<UErrorCode>(initial);
+    const auto* nativeOob = ucnv_getAlias(alias, nativeCount, &nativeOobStatus);
+    std::int32_t guestOobStatus = initial;
+    const auto* guestOob = ucnv_getAlias_nid_postfix(alias, nativeCount, &guestOobStatus);
+    Require(guestOob == nativeOob, "out of bounds alias matches native");
+    Require(guestOobStatus == static_cast<std::int32_t>(nativeOobStatus),
+            "out of bounds alias status matches native");
 }
 
 void Parity() {
     static_assert(std::is_same_v<decltype(&ucnv_getAliases_nid_postfix),
                   void (APS5_VABI*)(const char*, const char**, std::int32_t*)>);
+    static_assert(std::is_same_v<decltype(&ucnv_countAliases_nid_postfix),
+                  std::uint16_t (APS5_VABI*)(const char*, std::int32_t*)>);
+    static_assert(std::is_same_v<decltype(&ucnv_getAlias_nid_postfix),
+                  const char* (APS5_VABI*)(const char*, std::uint16_t, std::int32_t*)>);
     const std::string shortLimit(UCNV_MAX_CONVERTER_NAME_LENGTH - 1, 'a');
     const std::string exactLimit(UCNV_MAX_CONVERTER_NAME_LENGTH, 'a');
     const std::string pastLimit(UCNV_MAX_CONVERTER_NAME_LENGTH + 1, 'a');
@@ -133,12 +168,30 @@ void GuestPointers() {
 
     RequireInvalidArgument([&] { ucnv_getAliases_nid_postfix(invalidAlias, invalidOutput, nullptr); },
                            "null status throws before other pointers are read");
+    RequireInvalidArgument([&] { ucnv_countAliases_nid_postfix(invalidAlias, nullptr); },
+                           "null count status throws");
+    RequireInvalidArgument([&] { ucnv_getAlias_nid_postfix(invalidAlias, 0, nullptr); },
+                           "null getAlias status throws");
     RequireRuntimeError([&] { ucnv_getAliases_nid_postfix("UTF-8", nullptr, invalidStatus); },
                         "unreadable status throws");
+    RequireRuntimeError([&] { ucnv_countAliases_nid_postfix("UTF-8", invalidStatus); },
+                        "unreadable count status throws");
+    RequireRuntimeError([&] { ucnv_getAlias_nid_postfix("UTF-8", 0, invalidStatus); },
+                        "unreadable getAlias status throws");
     ucnv_getAliases_nid_postfix(invalidAlias, invalidOutput, readOnlyFailure);
     Require(*readOnlyFailure == failure, "prefailed read-only status returns before other pointers are read");
+    Require(ucnv_countAliases_nid_postfix(invalidAlias, readOnlyFailure) == 0,
+            "prefailed read-only count returns 0");
+    Require(*readOnlyFailure == failure, "prefailed read-only status untouched");
+    Require(ucnv_getAlias_nid_postfix(invalidAlias, 0, readOnlyFailure) == nullptr,
+            "prefailed read-only getAlias returns null");
+    Require(*readOnlyFailure == failure, "prefailed read-only status untouched");
     RequireRuntimeError([&] { ucnv_getAliases_nid_postfix("UTF-8", nullptr, readOnlySuccess); },
                         "successful read-only status is rejected before ICU work");
+    RequireRuntimeError([&] { ucnv_countAliases_nid_postfix("UTF-8", readOnlySuccess); },
+                        "successful read-only count status is rejected before ICU work");
+    RequireRuntimeError([&] { ucnv_getAlias_nid_postfix("UTF-8", 0, readOnlySuccess); },
+                        "successful read-only getAlias status is rejected before ICU work");
 
     UErrorCode probeStatus = U_ZERO_ERROR;
     const auto count = ucnv_countAliases("UTF-8", &probeStatus);
@@ -147,17 +200,43 @@ void GuestPointers() {
                                      reinterpret_cast<const char*>(std::uintptr_t{0x5678}));
     ucnv_getAliases_nid_postfix(pages + pageSize - 6, aliases.data() + 1, &boundaryStatus);
     Require(boundaryStatus == static_cast<std::int32_t>(probeStatus), "page-boundary alias status matches native");
+    std::int32_t countBoundaryStatus = 0;
+    const auto boundaryCount = ucnv_countAliases_nid_postfix(pages + pageSize - 6, &countBoundaryStatus);
+    Require(boundaryCount == count, "page-boundary alias count matches native");
+    Require(countBoundaryStatus == static_cast<std::int32_t>(probeStatus),
+            "page-boundary alias count status matches native");
+    std::int32_t getBoundaryStatus = 0;
+    const auto* boundaryAlias = ucnv_getAlias_nid_postfix(pages + pageSize - 6, 0, &getBoundaryStatus);
+    Require(getBoundaryStatus == static_cast<std::int32_t>(probeStatus),
+            "page-boundary alias get status matches native");
+    if (U_SUCCESS(probeStatus) && count != 0) {
+        Require(boundaryAlias != nullptr, "page-boundary alias get returns non-null");
+    }
     if (U_SUCCESS(probeStatus) && count != 0) {
         RequireRuntimeError([&] { ucnv_getAliases_nid_postfix(invalidAlias, aliases.data() + 1, &boundaryStatus); },
                             "unreadable alias throws after alias data is available");
         boundaryStatus = 0;
         RequireRuntimeError([&] { ucnv_getAliases_nid_postfix("UTF-8", invalidOutput, &boundaryStatus); },
                             "unwritable alias array throws without a partial write");
+        RequireRuntimeError([&] { ucnv_countAliases_nid_postfix(invalidAlias, &countBoundaryStatus); },
+                            "unreadable alias throws for countAliases");
+        RequireRuntimeError([&] { ucnv_getAlias_nid_postfix(invalidAlias, 0, &getBoundaryStatus); },
+                            "unreadable alias throws for getAlias");
     } else {
         boundaryStatus = 0;
         ucnv_getAliases_nid_postfix(invalidAlias, invalidOutput, &boundaryStatus);
         Require(boundaryStatus == static_cast<std::int32_t>(probeStatus),
                 "alias-data failure precedes input and output access");
+        countBoundaryStatus = 0;
+        Require(ucnv_countAliases_nid_postfix(invalidAlias, &countBoundaryStatus) == 0,
+                "missing alias data returns 0 for countAliases");
+        Require(countBoundaryStatus == static_cast<std::int32_t>(probeStatus),
+                "missing alias data status matches probeStatus for countAliases");
+        getBoundaryStatus = 0;
+        Require(ucnv_getAlias_nid_postfix(invalidAlias, 0, &getBoundaryStatus) == nullptr,
+                "missing alias data returns null for getAlias");
+        Require(getBoundaryStatus == static_cast<std::int32_t>(probeStatus),
+                "missing alias data status matches probeStatus for getAlias");
     }
 
 #ifdef _WIN32

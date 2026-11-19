@@ -88,3 +88,54 @@ extern "C" void APS5_VABI ucnv_getAliases_nid_postfix(const char* alias, const c
     if (!CopyOut(aliases, nativeAliases.data(), bytes)) NotImplemented_nid_no_patch(__func__);
     WriteStatus(error, status, initial, __func__);
 }
+
+extern "C" std::uint16_t APS5_VABI ucnv_countAliases_nid_postfix(const char* alias, std::int32_t* error) {
+    if (!error) APS5_INVALID_ARG_EX;
+    std::int32_t initial = 0;
+    if (!CopyIn(&initial, error, sizeof(initial))) NotImplemented_nid_no_patch(__func__);
+    UErrorCode status = static_cast<UErrorCode>(initial);
+    if (U_FAILURE(status)) return 0;
+    if (!Writable(error, sizeof(*error))) NotImplemented_nid_no_patch(__func__);
+
+    ucnv_countAliases("", &status);
+    if (U_FAILURE(status)) {
+        WriteStatus(error, status, initial, __func__);
+        return 0;
+    }
+
+    std::string aliasCopy;
+    const char* nativeAlias = nullptr;
+    if (alias) {
+        aliasCopy = ReadAlias(alias, __func__);
+        nativeAlias = aliasCopy.c_str();
+    }
+    const auto count = ucnv_countAliases(nativeAlias, &status);
+    WriteStatus(error, status, initial, __func__);
+    return count;
+}
+
+extern "C" const char* APS5_VABI ucnv_getAlias_nid_postfix(const char* alias, std::uint16_t n,
+                                                           std::int32_t* error) {
+    if (!error) APS5_INVALID_ARG_EX;
+    std::int32_t initial = 0;
+    if (!CopyIn(&initial, error, sizeof(initial))) NotImplemented_nid_no_patch(__func__);
+    UErrorCode status = static_cast<UErrorCode>(initial);
+    if (U_FAILURE(status)) return nullptr;
+    if (!Writable(error, sizeof(*error))) NotImplemented_nid_no_patch(__func__);
+
+    ucnv_countAliases("", &status);
+    if (U_FAILURE(status)) {
+        WriteStatus(error, status, initial, __func__);
+        return nullptr;
+    }
+
+    std::string aliasCopy;
+    const char* nativeAlias = nullptr;
+    if (alias) {
+        aliasCopy = ReadAlias(alias, __func__);
+        nativeAlias = aliasCopy.c_str();
+    }
+    const auto* result = ucnv_getAlias(nativeAlias, n, &status);
+    WriteStatus(error, status, initial, __func__);
+    return result;
+}
